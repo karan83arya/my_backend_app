@@ -3,3 +3,4 @@ uvicorn
 strawberry-graphql
 python-multipart
 psycopg2-binary
+bcrypt
