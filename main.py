@@ -58,36 +58,6 @@ class UserUpdate(BaseModel):
     first_name: str
     last_name: str
 
-
-# ============================
-# 🔐 LOGIN ROUTE
-# ============================
-
-@app.post("/login")
-def login(data: LoginRequest):
-    conn = get_connection()
-    cur = conn.cursor()
-
-    cur.execute(
-        "SELECT id, username FROM users WHERE email=%s AND password=%s",
-        (data.email, data.password),
-    )
-
-    user = cur.fetchone()
-
-    cur.close()
-    conn.close()
-
-    if user:
-        return {
-            "message": "Login successful",
-            "user_id": user[0],
-            "username": user[1]
-        }
-    else:
-        raise HTTPException(status_code=401, detail="Invalid credentials")
-
-
 # ============================
 # 👤 GET ALL USERS
 # ============================

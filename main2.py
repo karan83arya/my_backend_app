@@ -8,28 +8,49 @@ import bcrypt
 from datetime import datetime
 
 @strawberry.type
+class Country:
+    id: int
+    name: str
+
+@strawberry.type
+class State:
+    id: int
+    name: str
+    countryId: int
+
+@strawberry.type
+class City:
+    id: int
+    name: str
+    stateId: int
+
+@strawberry.type
+class AddUserResult:
+    id: int
+
+@strawberry.type
 class User:
     id: int
     username: str | None
-    email_id: str | None
+    emailId: str | None
     mobile: str | None
-    first_name: str | None
-    last_name: str | None
+    firstName: str | None
+    lastName: str | None
     about: str | None
-    profile_image: str | None
-    designation_id: str | None = None
+    profileImage: str | None
+    designationId: str | None
 
-    present_address: str | None
-    present_landmark: str | None
-    present_city: int | None
-    present_state: int | None
-    present_pincode: str | None
+    presentAddress: str | None
+    presentLandmark: str | None
+    presentCity: int | None
+    presentState: int | None
+    presentPincode: str | None
 
-    permanent_address: str | None
-    permanent_landmark: str | None
-    permanent_city: int | None
-    permanent_state: int | None
-    permanent_pincode: str | None
+    permanentAddress: str | None
+    permanentLandmark: str | None
+    permanentCity: int | None
+    permanentState: int | None
+    permanentPincode: str | None
 
 @strawberry.type
 class Ticket:
@@ -43,6 +64,41 @@ class Ticket:
     status: str
     created_at: str
     attachment_name: str | None
+
+@strawberry.type
+class AdmissionEnquiry:
+    id: int
+    student_name: str
+    date_of_birth: str
+    gender: str
+    nationality: str
+    current_institution: str | None
+
+    father_name: str
+    mother_name: str
+    mobile: str
+    email: str
+
+    school_id: int
+    address: str
+    country_id: int
+    state_id: int
+    city_id: int
+    country_name: str | None
+    state_name: str | None
+    city_name: str | None
+    address_pincode: str
+
+    course_applying: str
+    academic_year: str
+    preferred_campus: str | None
+    heard_from: str
+
+    special_requirements: str | None
+    questions: str | None
+    status_note: str | None
+
+    created_at: str
 
 @strawberry.type
 class TicketResult:
@@ -62,13 +118,27 @@ class Query:
         rows = cur.fetchall()
         cur.close(); conn.close()
         return [
-            User(id=r[0], username=r[1], email_id=r[2], mobile=r[3],
-                 first_name=r[4], last_name=r[5], designation_id=r[6],
-                 about=None, profile_image=None,
-                 present_address=None, present_landmark=None, present_city=None,
-                 present_state=None, present_pincode=None,
-                 permanent_address=None, permanent_landmark=None, permanent_city=None,
-                 permanent_state=None, permanent_pincode=None)
+            User(
+                id=r[0],
+                username=r[1],
+                emailId=r[2],
+                mobile=r[3],
+                firstName=r[4],
+                lastName=r[5],
+                designationId=r[6],
+                about=None,
+                profileImage=None,
+                presentAddress=None,
+                presentLandmark=None,
+                presentCity=None,
+                presentState=None,
+                presentPincode=None,
+                permanentAddress=None,
+                permanentLandmark=None,
+                permanentCity=None,
+                permanentState=None,
+                permanentPincode=None
+            )
             for r in rows
         ]
 
@@ -88,13 +158,25 @@ class Query:
         cur.close(); conn.close()
         if not r: return None
         return User(
-            id=r[0], username=r[1], email_id=r[2], mobile=r[3],
-            first_name=r[4], last_name=r[5], about=r[6], profile_image=r[7],
-            present_address=r[8], present_landmark=r[9], present_city=r[10],
-            present_state=r[11], present_pincode=r[12],
-            permanent_address=r[13], permanent_landmark=r[14], permanent_city=r[15],
-            permanent_state=r[16], permanent_pincode=r[17],
-            designation_id=r[18],
+            id=r[0],
+            username=r[1],
+            emailId=r[2],
+            mobile=r[3],
+            firstName=r[4],
+            lastName=r[5],
+            about=r[6],
+            profileImage=r[7],
+            presentAddress=r[8],
+            presentLandmark=r[9],
+            presentCity=r[10],
+            presentState=r[11],
+            presentPincode=r[12],
+            permanentAddress=r[13],
+            permanentLandmark=r[14],
+            permanentCity=r[15],
+            permanentState=r[16],
+            permanentPincode=r[17],
+            designationId=r[18],
         )
 
     @strawberry.field
@@ -159,6 +241,186 @@ class Query:
             communication_method=r[7], status=r[8],
             created_at=r[9].isoformat(), attachment_name=r[10]
         ) for r in rows]
+    
+
+    @strawberry.field
+    def admission_enquiries(self) -> list[AdmissionEnquiry]:
+        conn = get_connection()
+        cur = conn.cursor()
+
+        cur.execute("""
+SELECT 
+        ae.id, ae.student_name, ae.date_of_birth, ae.gender, ae.nationality,
+        ae.current_institution, ae.father_name, ae.mother_name,
+        ae.mobile, ae.email, ae.school_id, ae.address,
+
+        ae.country_id, ae.state_id, ae.city_id, ae.address_pincode,
+
+        c.name as country_name,
+        s.name as state_name,
+        ci.city as city_name,
+
+        ae.course_applying, ae.academic_year, ae.preferred_campus,
+        ae.heard_from, ae.special_requirements, ae.questions,
+        ae.status_note, ae.created_at
+
+    FROM admission_enquiries ae
+    LEFT JOIN countries c ON ae.country_id = c.id
+    LEFT JOIN states s ON ae.state_id = s.id
+    LEFT JOIN cities ci ON ae.city_id = ci.id
+
+    ORDER BY ae.created_at DESC
+            
+        """)
+
+        rows = cur.fetchall()
+        cur.close(); conn.close()
+
+        return [
+            AdmissionEnquiry(
+                id=r[0],
+                student_name=r[1],
+                date_of_birth=str(r[2]),
+                gender=r[3],
+                nationality=r[4],
+                current_institution=r[5],
+                father_name=r[6],
+                mother_name=r[7],
+                mobile=r[8],
+                email=r[9],
+                school_id=r[10],
+                address=r[11],
+                country_id=r[12],
+                state_id=r[13],
+                city_id=r[14],
+                address_pincode=r[15],
+                country_name=r[16],
+                state_name=r[17],
+                city_name=r[18],
+                course_applying=r[19],
+                academic_year=r[20],
+                preferred_campus=r[21],
+                heard_from=r[22],
+                special_requirements=r[23],
+                questions=r[24],
+                status_note=r[25],
+                created_at=str(r[26]),
+            )
+            for r in rows
+        ]
+    
+    @strawberry.field
+    def countries(self) -> list[Country]:
+        conn = get_connection()
+        cur = conn.cursor()
+        cur.execute("SELECT id, name FROM countries ORDER BY name")
+        rows = cur.fetchall()
+        cur.close(); conn.close()
+        return [Country(id=r[0], name=r[1]) for r in rows]
+
+
+    @strawberry.field
+    def states(self, countryId: int) -> list[State]:
+        conn = get_connection()
+        cur = conn.cursor()
+        cur.execute(
+            "SELECT id, name, country_id FROM states WHERE country_id = %s ORDER BY name",
+            (countryId,)
+        )
+        rows = cur.fetchall()
+        cur.close(); conn.close()
+        return [State(id=r[0], name=r[1], countryId=r[2]) for r in rows]
+
+
+    @strawberry.field
+    def cities(self, stateId: int) -> list[City]:
+        conn = get_connection()
+        cur = conn.cursor()
+        cur.execute(
+            "SELECT id, city, state_id FROM cities WHERE state_id = %s ORDER BY city",
+            (stateId,)
+        )
+        rows = cur.fetchall()
+        cur.close(); conn.close()
+        return [City(id=r[0], name=r[1], stateId=r[2]) for r in rows]
+
+    @strawberry.field
+    def classes(self) -> list[Country]:  # reuse simple structure
+        conn = get_connection()
+        cur = conn.cursor()
+        cur.execute("SELECT id, class_name FROM m_classes ORDER BY class_number")
+        rows = cur.fetchall()
+        cur.close(); conn.close()
+
+        return [Country(id=r[0], name=r[1]) for r in rows]
+
+    @strawberry.field
+    def admission_enquiry_by_id(self, id: int) -> AdmissionEnquiry | None:
+        conn = get_connection()
+        cur = conn.cursor()
+
+        cur.execute("""
+            SELECT 
+                ae.id, ae.student_name, ae.date_of_birth, ae.gender, ae.nationality,
+                ae.current_institution, ae.father_name, ae.mother_name,
+                ae.mobile, ae.email, ae.school_id, ae.address,
+
+                ae.country_id, ae.state_id, ae.city_id, ae.address_pincode,
+
+                c.name as country_name,
+                s.name as state_name,
+                ci.city as city_name,
+
+                ae.course_applying, ae.academic_year, ae.preferred_campus,
+                ae.heard_from, ae.special_requirements, ae.questions,
+                ae.status_note, ae.created_at
+
+            FROM admission_enquiries ae
+            LEFT JOIN countries c ON ae.country_id = c.id
+            LEFT JOIN states s ON ae.state_id = s.id
+            LEFT JOIN cities ci ON ae.city_id = ci.id
+
+            WHERE ae.id = %s
+        """, (id,))
+
+        r = cur.fetchone()
+        cur.close(); conn.close()
+
+        if not r:
+            return None
+
+        return AdmissionEnquiry(
+            id=r[0],
+            student_name=r[1],
+            date_of_birth=str(r[2]),
+            gender=r[3],
+            nationality=r[4],
+            current_institution=r[5],
+            father_name=r[6],
+            mother_name=r[7],
+            mobile=r[8],
+            email=r[9],
+            school_id=r[10],
+            address=r[11],
+
+            country_id=r[12],
+            state_id=r[13],
+            city_id=r[14],
+            address_pincode=r[15],
+
+            country_name=r[16],
+            state_name=r[17],
+            city_name=r[18],
+
+            course_applying=r[19],
+            academic_year=r[20],
+            preferred_campus=r[21],
+            heard_from=r[22],
+            special_requirements=r[23],
+            questions=r[24],
+            status_note=r[25],
+            created_at=str(r[26]),
+        )
 
 
 @strawberry.type
@@ -234,7 +496,7 @@ class Mutation:
         permanentCity: int | None = None,
         permanentState: int | None = None,
         permanentPincode: str | None = None,
-    ) -> str:
+    ) -> AddUserResult:
         conn = get_connection()
         cur = conn.cursor()
         now = datetime.utcnow()
@@ -275,7 +537,7 @@ class Mutation:
 
         conn.commit()
         cur.close(); conn.close()
-        return "User Added Successfully"
+        return AddUserResult(id=new_id)
 
     @strawberry.mutation
     def update_user(
@@ -404,6 +666,72 @@ class Mutation:
         conn.commit()
         cur.close(); conn.close()
         return "Ticket Deleted Successfully"
+
+
+    @strawberry.mutation
+    def create_admission_enquiry(
+        self,
+        studentName: str,
+        dateOfBirth: str,
+        gender: str,
+        nationality: str,
+        currentInstitution: str | None,
+
+        fatherName: str,
+        motherName: str,
+        mobile: str,
+        email: str,
+
+        schoolId: int,
+        address: str,
+        countryId: int,
+        stateId: int,
+        cityId: int,
+        addressPincode: str,
+
+        courseApplying: str,
+        academicYear: str,
+        preferredCampus: str | None,
+        heardFrom: str,
+
+        specialRequirements: str | None,
+        questions: str | None,
+    ) -> str:
+
+        conn = get_connection()
+        cur = conn.cursor()
+
+        cur.execute("""
+            INSERT INTO admission_enquiries (
+                student_name, date_of_birth, gender, nationality,
+                current_institution,
+                father_name, mother_name, mobile, email,
+                school_id, address, country_id, state_id, city_id,
+                address_pincode,
+                course_applying, academic_year, preferred_campus,
+                heard_from, special_requirements, questions
+            )
+            VALUES (%s, %s, %s, %s, %s,
+                    %s, %s, %s, %s,
+                    %s, %s, %s, %s, %s,
+                    %s,
+                    %s, %s, %s,
+                    %s, %s, %s)
+        """, (
+            studentName, dateOfBirth, gender, nationality,
+            currentInstitution,
+            fatherName, motherName, mobile, email,
+            schoolId, address, countryId, stateId, cityId,
+            addressPincode,
+            courseApplying, academicYear, preferredCampus,
+            heardFrom, specialRequirements, questions
+        ))
+
+        conn.commit()
+        cur.close()
+        conn.close()
+
+        return "Enquiry Submitted"  
 
 
 schema = strawberry.Schema(query=Query, mutation=Mutation)
