@@ -18,7 +18,35 @@ graphql_app = GraphQLRouter(schema)
 
 app.include_router(graphql_app, prefix="/graphql")
 
-app.mount("/uploads", StaticFiles(directory="uploads"), name="uploads")
+
+# ============================
+# 📁 CONFIG
+# ============================
+
+SERVER_URL = "http://192.168.1.56:8000"  # your FastAPI IP
+
+MENU_ICON_DIR = r"C:\xampp\htdocs\smartEduERANew\public\assets\adminAssets\img\menu-icon"
+
+app.mount(
+    "/menu-icons",
+    StaticFiles(directory=MENU_ICON_DIR),
+    name="menu-icons"
+)
+
+UPLOAD_DIR = r"C:\xampp\htdocs\smartEduERANew\public\uploads\profile_images"
+
+TICKET_UPLOAD_DIR = r"C:\xampp\htdocs\smartEduERANew\public\uploads\ticket_images"
+
+app.mount(
+    "/uploads/profile_images",
+    StaticFiles(directory=UPLOAD_DIR),
+    name="profile_images"
+)
+app.mount(
+    "/uploads/ticket_images",
+    StaticFiles(directory=TICKET_UPLOAD_DIR),
+    name="ticket_images"
+)
 
 # 🔥 CORS (very important for Flutter)
 app.add_middleware(
@@ -257,40 +285,11 @@ def get_user(user_id: int):
 
 from fastapi.responses import FileResponse
 
-@app.get("/user/{user_id}/photo")
-def get_user_photo(user_id: int):
-    conn = get_connection()
-    cur = conn.cursor()
-
-    cur.execute(
-        "SELECT profile_image FROM users WHERE id = %s",
-        (user_id,),
-    )
-
-    result = cur.fetchone()
-
-    cur.close()
-    conn.close()
-
-    if not result or not result[0]:
-        return {"error": "No image"}
-
-    # 🔥 FIX HERE
-    file_path = os.path.abspath(result[0])
-
-    if not os.path.exists(file_path):
-        print("❌ File not found:", file_path)
-        return {"error": "File not found"}
-
-    print("✅ Serving file:", file_path)
-
-    return FileResponse(file_path)
-
 
 import os
 from fastapi import UploadFile, File
 
-UPLOAD_DIR = "uploads/profile"
+
 
 @app.post("/upload-profile/{user_id}")
 def upload_profile(user_id: int, file: UploadFile = File(...)):
@@ -298,39 +297,34 @@ def upload_profile(user_id: int, file: UploadFile = File(...)):
     if not file.content_type.startswith("image/"):
         return {"error": "Only image files allowed"}
 
-    # create folder if not exists
     os.makedirs(UPLOAD_DIR, exist_ok=True)
 
-    # get extension
     ext = file.filename.split(".")[-1] if "." in file.filename else "jpg"
-
     file_name = f"user_{user_id}.{ext}"
     file_path = os.path.join(UPLOAD_DIR, file_name)
 
-    # save file to disk
     with open(file_path, "wb") as f:
         f.write(file.file.read())
 
-    # save ONLY path in DB
+    # ✅ Save clean relative path in DB
+    relative_path = f"uploads/profile_images/{file_name}"
+
     conn = get_connection()
     cur = conn.cursor()
-
     cur.execute(
-        """
-        UPDATE users
-        SET profile_image = %s
-        WHERE id = %s
-        """,
-        (file_path, user_id),
+        "UPDATE users SET profile_image = %s WHERE id = %s",
+        (relative_path, user_id),  # ✅ clean path in DB
     )
-
     conn.commit()
     cur.close()
     conn.close()
 
-    return {"message": "Profile image uploaded", "path": file_path}
+    return {
+        "message": "Profile image uploaded",
+        "path": relative_path,
+        "url": f"{SERVER_URL}/uploads/profile_images/{file_name}"  # ✅ full URL for Flutter
+    }
 
-TICKET_UPLOAD_DIR = "uploads/tickets"
 
 @app.post("/upload-ticket/{ticket_id}")
 def upload_ticket(ticket_id: int, file: UploadFile = File(...)):
@@ -347,15 +341,21 @@ def upload_ticket(ticket_id: int, file: UploadFile = File(...)):
     with open(file_path, "wb") as f:
         f.write(file.file.read())
 
-    # Save path to DB
+    # ✅ Save clean relative path in DB
+    relative_path = f"uploads/ticket_images/{file_name}"
+
     conn = get_connection()
     cur = conn.cursor()
     cur.execute(
         "UPDATE support_tickets SET attachment_name = %s WHERE id = %s",
-        (file_path, ticket_id),
+        (relative_path, ticket_id),  # ✅ clean path in DB
     )
     conn.commit()
     cur.close()
     conn.close()
 
-    return {"message": "Ticket image uploaded", "path": file_path}
+    return {
+        "message": "Ticket image uploaded",
+        "path": relative_path,
+        "url": f"{SERVER_URL}/uploads/ticket_images/{file_name}"
+    }

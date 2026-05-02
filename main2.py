@@ -6,6 +6,24 @@ from strawberry.fastapi import GraphQLRouter
 from database import get_connection
 import bcrypt
 from datetime import datetime
+import os
+
+
+SERVER_URL = "http://192.168.1.56:8000"
+
+@strawberry.type
+class Menu:
+    id: int
+    name: str
+    parentId: int | None
+    iconSvg: str | None 
+    mobileUrl: str | None
+    children: list['Menu']
+
+@strawberry.type
+class School:
+    id: int
+    name: str
 
 @strawberry.type
 class Country:
@@ -29,6 +47,11 @@ class AddUserResult:
     id: int
 
 @strawberry.type
+class AuthGroup:
+    id: int
+    name: str
+
+@strawberry.type
 class User:
     id: int
     username: str | None
@@ -39,6 +62,7 @@ class User:
     about: str | None
     profileImage: str | None
     designationId: str | None
+    userType: str | None
 
     presentAddress: str | None
     presentLandmark: str | None
@@ -108,16 +132,102 @@ class TicketResult:
 class Query:
 
     @strawberry.field
+    def schools(self) -> list[School]:
+        conn = get_connection()
+        cur = conn.cursor()
+
+        cur.execute("""
+            SELECT id, school_name
+            FROM schools
+            ORDER BY school_name
+        """)
+
+        rows = cur.fetchall()
+        cur.close(); conn.close()
+
+        return [School(id=r[0], name=r[1]) for r in rows]
+
+    @strawberry.field
+    def menus(self, groupId: int) -> list[Menu]:
+        conn = get_connection()
+        cur = conn.cursor()
+
+        if groupId == 1:
+            cur.execute("""
+                SELECT id, name, parent_id, icon_svg, mobile_url
+                FROM auth_menus
+                WHERE status = 0 AND show_menu = 0
+                ORDER BY priority
+            """)
+        else:
+            cur.execute("""
+                SELECT DISTINCT m.id, m.name, m.parent_id, m.icon_svg, m.mobile_url
+                FROM auth_menus m
+                JOIN auth_groups_permissions gp ON gp.menu_id = m.id
+                WHERE gp.group_id = %s
+                ORDER BY m.id ASC
+            """, (groupId,))
+
+        rows = cur.fetchall()
+        cur.close(); conn.close()
+
+        # build tree
+        menu_map = {
+            r[0]: {
+                "id": r[0],
+                "name": r[1],
+                "parentId": r[2],
+                "iconSvg": r[3],
+                "mobileUrl": r[4],
+                "children": []
+            }
+            for r in rows
+        }
+        root = []
+
+        for m in menu_map.values():
+            if m["parentId"] and m["parentId"] in menu_map:
+                menu_map[m["parentId"]]["children"].append(m)
+            else:
+                root.append(m)
+
+        def build(m):
+            filename = os.path.basename(m["iconSvg"]) if m.get("iconSvg") else None
+
+            icon_url = f"{SERVER_URL}/menu-icons/{filename}" if filename else None
+
+            return Menu(
+                id=m["id"],
+                name=m["name"],
+                parentId=m["parentId"],
+                iconSvg=icon_url,
+                mobileUrl=m.get("mobileUrl"),
+                children=[build(c) for c in m["children"]]
+            )
+
+        return [build(m) for m in root]
+
+    @strawberry.field
     def users(self) -> list[User]:
         conn = get_connection()
         cur = conn.cursor()
         cur.execute("""
-            SELECT id, username, email_id, mobile, first_name, last_name, designation_id
-            FROM users
+            SELECT 
+                u.id, 
+                u.username, 
+                u.email_id, 
+                u.mobile, 
+                u.first_name, 
+                u.last_name, 
+                u.designation_id,
+                u.profile_image,
+                ag.name as user_type
+            FROM users u
+            LEFT JOIN auth_groups ag ON u.user_type_id = ag.id
         """)
         rows = cur.fetchall()
         cur.close(); conn.close()
-        return [
+        return [    
             User(
                 id=r[0],
                 username=r[1],
@@ -126,18 +236,22 @@ class Query:
                 firstName=r[4],
                 lastName=r[5],
                 designationId=r[6],
+                profileImage=f"{SERVER_URL}/{r[7]}" if r[7] else None,
+                userType=r[8],
+
                 about=None,
-                profileImage=None,
+
                 presentAddress=None,
                 presentLandmark=None,
                 presentCity=None,
                 presentState=None,
                 presentPincode=None,
+
                 permanentAddress=None,
                 permanentLandmark=None,
                 permanentCity=None,
                 permanentState=None,
-                permanentPincode=None
+                permanentPincode=None,
             )
             for r in rows
         ]
@@ -147,12 +261,15 @@ class Query:
         conn = get_connection()
         cur = conn.cursor()
         cur.execute("""
-            SELECT id, username, email_id, mobile,
-                   first_name, last_name, about, profile_image,
-                   present_address, present_landmark, present_city, present_state, present_pincode,
-                   permanent_address, permanent_landmark, permanent_city, permanent_state, permanent_pincode,
-                   designation_id
-            FROM users WHERE id = %s
+            SELECT 
+                u.id, u.username, u.email_id, u.mobile,
+                u.first_name, u.last_name, u.about, u.profile_image,
+                u.present_address, u.present_landmark, u.present_city, u.present_state, u.present_pincode,
+                u.permanent_address, u.permanent_landmark, u.permanent_city, u.permanent_state, u.permanent_pincode,
+                u.designation_id,
+                u.user_type_id
+            FROM users u
+            WHERE u.id = %s
         """, (userId,))
         r = cur.fetchone()
         cur.close(); conn.close()
@@ -165,18 +282,22 @@ class Query:
             firstName=r[4],
             lastName=r[5],
             about=r[6],
-            profileImage=r[7],
+            profileImage=f"{SERVER_URL}/{r[7]}" if r[7] else None,
+
             presentAddress=r[8],
             presentLandmark=r[9],
             presentCity=r[10],
             presentState=r[11],
             presentPincode=r[12],
+
             permanentAddress=r[13],
             permanentLandmark=r[14],
             permanentCity=r[15],
             permanentState=r[16],
             permanentPincode=r[17],
+
             designationId=r[18],
+            userType=str(r[19]) if r[19] else None,  
         )
 
     @strawberry.field
@@ -421,6 +542,23 @@ SELECT
             status_note=r[25],
             created_at=str(r[26]),
         )
+    
+    @strawberry.field
+    def auth_groups(self) -> list[AuthGroup]:
+        conn = get_connection()
+        cur = conn.cursor()
+
+        cur.execute("""
+            SELECT id, name 
+            FROM auth_groups 
+            WHERE status = 0
+            ORDER BY id
+        """)
+
+        rows = cur.fetchall()
+        cur.close(); conn.close()
+
+        return [AuthGroup(id=r[0], name=r[1]) for r in rows]
 
 
 @strawberry.type
@@ -484,6 +622,8 @@ class Mutation:
         lastName: str | None = None,
         about: str | None = None,
         designationId: str | None = None,
+        userTypeId: int | None = None,
+        schoolId: int | None = None,
 
         presentAddress: str | None = None,
         presentLandmark: str | None = None,
@@ -508,19 +648,19 @@ class Mutation:
         cur.execute("""
             INSERT INTO users (
                 username, paswd, email_id, mobile,
-                first_name, last_name, about, designation_id,
+                first_name, last_name, about, designation_id, user_type_id, school_id,
                 present_address, present_landmark, present_city, present_state, present_pincode,
                 permanent_address, permanent_landmark, permanent_city, permanent_state, permanent_pincode,
                 created_at, updated_at, active
             )
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s,
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
                     %s, %s, %s, %s, %s,
                     %s, %s, %s, %s, %s,
                     %s, %s, 1)
             RETURNING id
         """, (
             username, password, emailId, mobile,
-            firstName, lastName, about, designationId,
+            firstName, lastName, about, designationId, userTypeId, schoolId,
             presentAddress, presentLandmark, presentCity, presentState, presentPincode,
             permanentAddress, permanentLandmark, permanentCity, permanentState, permanentPincode,
             now, now
@@ -561,6 +701,7 @@ class Mutation:
         permanentState: int | None = None,
         permanentPincode: str | None = None,
         profileImage: str | None = None,
+        userTypeId: int | None = None,
     ) -> str:
         conn = get_connection()
         cur = conn.cursor()
@@ -584,13 +725,14 @@ class Mutation:
                 permanent_state    = COALESCE(%s, permanent_state),
                 permanent_pincode  = COALESCE(%s, permanent_pincode),
                 profile_image      = COALESCE(%s, profile_image),
+                user_type_id      = COALESCE(%s, user_type_id),
                 updated_at         = NOW()
             WHERE id = %s
         """, (
-            username, emailId, mobile, firstName, lastName, about, designationId,
-            presentAddress, presentLandmark, presentCity, presentState, presentPincode,
-            permanentAddress, permanentLandmark, permanentCity, permanentState, permanentPincode,
-            profileImage, user_id
+    username, emailId, mobile, firstName, lastName, about, designationId,
+    presentAddress, presentLandmark, presentCity, presentState, presentPincode,
+    permanentAddress, permanentLandmark, permanentCity, permanentState, permanentPincode,
+    profileImage, userTypeId, user_id
         ))
         conn.commit()
         cur.close(); conn.close()
